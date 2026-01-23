@@ -16,41 +16,74 @@ from PIL import Image
 
 
 
-def load_dataset(root):
+def load_dataset(root, target_size=(168, 192)):
     images = []
     labels = []
 
     for person in sorted(os.listdir(root)):
         person_dir = os.path.join(root, person)
 
-        # ✅ ignorer README et autres fichiers
         if not os.path.isdir(person_dir):
             continue
 
-        label = int(person[1:]) - 1  # s1 → 0, s2 → 1, ...
+        # Extraction robuste du label (fonctionne pour s1 et yaleB01)
+        digits = ''.join(filter(str.isdigit, person))
+        if not digits: continue
+        label = int(digits) - 1
 
         for img_name in sorted(os.listdir(person_dir)):
             if not img_name.lower().endswith(".pgm"):
                 continue
 
             img_path = os.path.join(person_dir, img_name)
-            img = Image.open(img_path).convert("L")
-            images.append(np.array(img).flatten())
-            labels.append(label)
+            try:
+                img = Image.open(img_path).convert("L")
+                if target_size:
+                    img = img.resize(target_size)
+                images.append(np.array(img).flatten())
+                labels.append(label)
+            except Exception as e:
+                print(f"Erreur chargement {img_path}: {e}")
 
     return np.array(images), np.array(labels)
 
 
 
 def compute_eigenfaces(X, K):
+    # Expect X shape: (nb_images, N) where each row is a flattened image.
+    # Compute mean face (length N) across the image rows.
     mean_face = np.mean(X, axis=0)
     X_centered = X - mean_face
 
-    # PCA via SVD
-    U, S, Vt = np.linalg.svd(X_centered, full_matrices=False)
+    # Perform SVD on the transposed centered data so principal components
+    # are vectors of length N (same as an image). U will have shape (N, nb_images).
+    U, S, Vt = np.linalg.svd(X_centered.T, full_matrices=False)
 
-    eigenfaces = Vt[:K]
+    # Take first K principal components (columns of U) and return them
+    # as rows so eigenfaces has shape (K, N).
+    eigenfaces = U[:, :K].T
     return mean_face, eigenfaces
+
+
+def plot_eigenfaces_and_mean(mean_face, eigenfaces, h, w, K=10):
+    plt.figure(figsize=(15, 5))
+    
+    # Plot mean face
+    plt.subplot(1, K + 1, 1)
+    plt.imshow(mean_face.reshape(h, w), cmap="gray")
+    plt.title("Mean Face")
+    plt.axis("off")
+
+    # Plot top K eigenfaces
+    for i in range(K):
+        plt.subplot(1, K + 1, i + 2)
+        plt.imshow(eigenfaces[i].reshape(h, w), cmap="gray")
+        plt.title(f"EF {i+1}")
+        plt.axis("off")
+    
+    plt.tight_layout()
+    plt.show()
+
 
 
 def project(face, mean_face, eigenfaces):
@@ -112,11 +145,16 @@ def train_test_split(X, y, n_train=5):
 
 
 # Charger les données
-X, y = load_dataset("att_face")
+X, y = load_dataset("CroppedYale")
 
 # Calcul PCA
 K = 50  # typiquement 40–100
 mean_face, eigenfaces = compute_eigenfaces(X, K)
+
+# Visualisation du visage moyen et des eigenfaces
+h, w = 192, 168  # taille de l'image (CroppedYale)
+plot_eigenfaces_and_mean(mean_face, eigenfaces, h, w, K=10)
+
 
 projections = np.array([
     project(x, mean_face, eigenfaces)
@@ -140,7 +178,6 @@ weights = eigenfaces @ (original - mean_face)
 reconstructed = reconstruct_face(weights, mean_face, eigenfaces)
 
 
-h, w = 112, 92  # taille de l'image
 
 class_centers = []
 
@@ -187,7 +224,7 @@ for K in [5, 10, 20, 40]:
 
 
 
-test_path = "att_face/s10/8.pgm"
+test_path = "CroppedYale/yaleB10/yaleB10_P00A+000E+00.pgm"
 
 test_img = Image.open(test_path).convert("L")
 test_face = np.array(test_img).flatten()
@@ -200,7 +237,7 @@ pred_label, dist = recognize_class(
 )
 
 
-print("Personne reconnue : s", pred_label + 1)
+print("Personne reconnue : Sujet", pred_label + 1)
 
 plt.figure(figsize=(6, 3))
 
@@ -213,7 +250,7 @@ plt.axis("off")
 recognized_face = X[y == pred_label][0]
 
 plt.subplot(1, 2, 2)
-plt.title(f"Reconnu : s{pred_label + 1}")
+plt.title(f"Reconnu : Sujet{pred_label + 1}")
 plt.imshow(recognized_face.reshape(h, w), cmap="gray")
 plt.axis("off")
 
