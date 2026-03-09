@@ -16,7 +16,7 @@ Fonctionnalités principales :
     - comparaison avec les centres de classe
 - Évaluation des performances selon différents paramètres
 
-Auteur : beddo
+Auteur : Meddeb Aimine et Beddouk-Ginesy Léonard
 Date : 2026
 """
 
